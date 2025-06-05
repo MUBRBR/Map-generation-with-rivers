@@ -6,6 +6,12 @@ __pycache__/
 # C extensions
 *.so
 
+# .vscode
+.vscode
+
+# BMP
+*.BMP
+
 # Distribution / packaging
 .Python
 build/
@@ -172,3 +178,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+.fake
