@@ -1,4 +1,6 @@
 #r "makeBMP.dll"
+open System
+open System.Collections.Generic
 
 let mutable rivers = 1 // indicates that rivers are made
 
@@ -7,6 +9,10 @@ let width = 1023 // size of bitmap array
 let heights = Array2D.create width width -2.0
 let river = Array2D.create width width false
 
+// k1 and k2 defined in rivers-papers..
+let k1 = 0.32
+let k2 = 0.55
+
 let min3 x y z = min x (min y z)
 let max3 x y z = max x (max y z)
 
@@ -14,14 +20,14 @@ let max3 x y z = max x (max y z)
 let magic = 100.0 * System.Math.PI
 
 // make new seed from two seeds
-let mix seed1 seed2 =
-  let a = (seed1 + magic)
-  let b = (seed2 + magic)
+let mix (seed1 : float) (seed2 : float) =
+  let a : float = (seed1 + magic)
+  let b : float = (seed2 + magic)
   (a*b) % 2.0 - 1.0
 
 // make new seed from one seed
-let nxt seed =
-  let a = (seed + magic)
+let nxt (seed : float) =
+  let a : float = (seed + magic)
   (a*a) % 2.0 - 1.0
   
 // random value between a and b, tend towards middle
@@ -29,7 +35,8 @@ let between(a,b,seed) =
   (a + b + seed*seed*seed*(a-b))/2.0
 
 type Vert = { x: float; y: float; s: float; h: float }
-type Edge = float option
+type Triangle = {vert0 : Vert; vert1 : Vert; vert2 : Vert}
+// type Edge = float option
 
 // distance between points
 let distance (p0:Vert) (p1:Vert) =
@@ -52,51 +59,47 @@ let distance (p0:Vert) (p1:Vert) =
 //   | /
 //   v2
 
-let rec tria (v0:Vert) (v1:Vert) (v2:Vert)
-             xmin xmax ymin ymax epsilon =
-// ei opposite vi
-// long edge is e0
-// midpoint of e0 is v3
-// e4 between v3 and v2
-// e5 between v3 and e1
-// e3 between v3 and v0
-  if v0.x < xmin && v1.x < xmin && v2.x < xmin ||
-     v0.x > xmax && v1.x > xmax && v2.x > xmax ||
-     v0.y < ymin && v1.y < ymin && v2.y < ymin ||
-     v0.y > ymax && v1.y > ymax && v2.y > ymax
-  then () // outside bounding box
-  else
-    let dist = distance v1 v2 // distance
+let outsideBounds (triangle : Triangle, xmin: float, xmax: float, ymin: float, ymax: float) : bool =
+    triangle.vert0.x < xmin && triangle.vert1.x < xmin && triangle.vert2.x < xmin ||
+    triangle.vert0.x > xmax && triangle.vert1.x > xmax && triangle.vert2.x > xmax ||
+    triangle.vert0.y < ymin && triangle.vert1.y < ymin && triangle.vert2.y < ymin ||
+    triangle.vert0.y > ymax && triangle.vert1.y > ymax && triangle.vert2.y > ymax
 
-    // altitude variation depends on both horisontal and vertical distance
-    let delta = 0.32*dist + 0.55*abs(v1.h-v2.h)
 
-    // attributes for v3
-    let s3 = mix v1.s v2.s
-    let x3 = (v1.x+v2.x)/2.0
-    let y3 = (v1.y+v2.y)/2.0
-    let h3 = (v1.h+v2.h)/2.0+s3*delta
+let triaLoop (v0:Vert) (v1:Vert) (v2:Vert) (xmin:float) (xmax:float) (ymin:float) (ymax:float) (epsilon:float) =
+  // Initialize a stack with just the original triangle in it
+  let triangles : Stack<Triangle> = Stack<Triangle>()    
+  triangles.Push{vert0=v0; vert1=v1; vert2=v2}
+  
+  while triangles.Count > 0 do
+    // popping a triangle from the stack while still having access to it for calculation purposes below.
+    let currTriangle : Triangle = triangles.Pop()
+    if outsideBounds(currTriangle, xmin, xmax, ymin, ymax) then ()
+    else
+      let dist: float = distance currTriangle.vert1 currTriangle.vert2 // distance
 
-    let v3 = {x=x3; y=y3; s=s3; h=h3}
+      // altitude variation depends on both horisontal and vertical distance
+      let delta: float = k1*dist + k2*abs(currTriangle.vert1.h - currTriangle.vert2.h)
 
-    if dist < epsilon
-    then // plot point
-      let i = int (round ((x3-xmin) / epsilon))
-      let j = int (round ((y3-ymin) / epsilon))
-      if i < 0 || i >= width || j < 0 || j >= width
-      then ()
-      else (heights.[i,j] <-
-              if heights.[i,j] = -2.0 then h3 else (heights.[i,j] + h3)/2.0;)
-    else // subdivide
-      // find attributes for e3
-      let s03 = mix v0.s s3 // seed for e3
-      
-      // recurse on subtriangles
-      (tria v3 v0 v1 xmin xmax ymin ymax epsilon;
-       tria v3 v0 v2 xmin xmax ymin ymax epsilon)
+      // attributes for v3
+      let s3: float = mix currTriangle.vert1.s currTriangle.vert2.s
+      let x3: float = (currTriangle.vert1.x + currTriangle.vert2.x) / 2.0
+      let y3: float = (currTriangle.vert1.y + currTriangle.vert2.y) / 2.0
+      let h3: float = (currTriangle.vert1.h + currTriangle.vert2.h) / 2.0 + s3 * delta
+      let v3: Vert = {x=x3; y=y3; s=s3; h=h3}   
 
-// possibly extend river
-and extend(v, e, vNear, vFar, s, delta) =
+      if dist < epsilon then
+        let i: int = int (round ((x3-xmin) / epsilon))
+        let j: int = int (round ((y3-ymin) / epsilon))
+        if i < 0 || i >= width || j < 0 || j >= width
+        then ()
+        else heights.[i,j] <-
+                if heights.[i,j] = -2.0 then h3 else (heights.[i,j] + h3)/2.0
+      else
+        triangles.Push{vert0=v3; vert1=currTriangle.vert0; vert2=currTriangle.vert1}
+        triangles.Push{vert0=v3; vert1=currTriangle.vert0; vert2=currTriangle.vert2}
+
+let extend(v, e, vNear, vFar, s, delta) =
   if  v.h < min 0.0 e && 0.0 < vFar.h then
     Some (between (e, v.h, s)) // extend down
   else if abs s < 0.65 && e < min3 v.h vNear.h vFar.h then
@@ -221,31 +224,28 @@ let main args =
   let ymin = max 0.0 (ymid - 0.5 / scale)
   let xmax = min 1.0 (xmid + 0.5 / scale)
   let ymax = min 1.0 (ymid + 0.5 / scale)
-
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
+  
+  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
        {x=0.0; y=0.0; s=seed00; h=h00}
        {x=0.0; y=1.0; s=seed01; h=h01}
        xmin xmax ymin ymax
        (1.0 / float width / scale);
-
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
+  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
        {x=0.0; y=0.0; s=seed00; h=h00}
        {x=1.0; y=0.0; s=seed10; h=h10}
        xmin xmax ymin ymax
        (1.0 / float width / scale);
-
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
+  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
        {x=1.0; y=1.0; s=seed11; h=h11}
        {x=0.0; y=1.0; s=seed01; h=h01}
        xmin xmax ymin ymax
        (1.0 / float width / scale);
-
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
+  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
        {x=1.0; y=1.0; s=seed11; h=h11}
        {x=1.0; y=0.0; s=seed10; h=h10}
        xmin xmax ymin ymax
        (1.0 / float width / scale);
-
+  
    array2bmp outfile;
 
    0
