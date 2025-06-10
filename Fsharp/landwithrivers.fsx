@@ -282,9 +282,9 @@ let main args =
      i <- i+1
      
   if seed = 0.0 then
-    let ss = 47000
-    // let rng = System.Random()
-    // let ss = rng.Next(0,1000000)
+    // let ss = 47000 // For a specific seed to test against recursive version.
+    let rng = System.Random()
+    let ss = rng.Next(0,1000000)
     seed <- float ss / 100000.0
     printf "Seed: %A\n" seed
 
@@ -308,33 +308,33 @@ let main args =
   triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
        {x=0.0; y=0.0; s=seed00; h=h00}
        {x=0.0; y=1.0; s=seed01; h=h01}
-       -101
-       -101
-       -101
+       -100
+       -100
+       -100
        xmin xmax ymin ymax
        (1.0 / float width / scale);
   triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
        {x=0.0; y=0.0; s=seed00; h=h00}
        {x=1.0; y=0.0; s=seed10; h=h10}
-       -101
-       -101
-       -101
+       -100
+       -100
+       -100
        xmin xmax ymin ymax
        (1.0 / float width / scale);
   triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
        {x=1.0; y=1.0; s=seed11; h=h11}
        {x=0.0; y=1.0; s=seed01; h=h01}
-       -101
-       -101
-       -101
+       -100
+       -100
+       -100
        xmin xmax ymin ymax
        (1.0 / float width / scale);
   triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
        {x=1.0; y=1.0; s=seed11; h=h11}
        {x=1.0; y=0.0; s=seed10; h=h10}
-       -101
-       -101
-       -101
+       -100
+       -100
+       -100
        xmin xmax ymin ymax
        (1.0 / float width / scale);
   
