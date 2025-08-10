@@ -4,7 +4,7 @@ open System.Collections.Generic
 
 let mutable rivers = 1 // indicates that rivers are made
 
-let width = 1023 // size of bitmap array
+let width = 2048 // size of bitmap array
 
 let heights = Array2D.create width width -2.0
 let river = Array2D.create width width false
@@ -35,15 +35,14 @@ let between(a,b,seed) =
   (a + b + seed*seed*seed*(a-b))/2.0
 
 type Vert = { x: float; y: float; s: float; h: float }
-type Triangle = {vert0 : Vert; vert1 : Vert; vert2 : Vert}
+type Triangle = {vert0 : Vert; vert1 : Vert; vert2 : Vert; e0 : float; e1 : float; e2 : float}
 
 type Position = {x:float; y:float}
-// type Edge = float option
 
 // distance between points
 let distance (p0:Vert) (p1:Vert) =
-  let dx = p1.x-p0.x
-  let dy = p1.y-p0.y
+  let dx: float = p1.x-p0.x
+  let dy: float = p1.y-p0.y
   sqrt(dx*dx+dy*dy)
 
 
@@ -61,68 +60,97 @@ let distance (p0:Vert) (p1:Vert) =
 //   | /
 //   v2
 
-let outsideBounds (triangle : Triangle, xmin: float, xmax: float, ymin: float, ymax: float) : bool =
-    triangle.vert0.x < xmin && triangle.vert1.x < xmin && triangle.vert2.x < xmin ||
-    triangle.vert0.x > xmax && triangle.vert1.x > xmax && triangle.vert2.x > xmax ||
-    triangle.vert0.y < ymin && triangle.vert1.y < ymin && triangle.vert2.y < ymin ||
-    triangle.vert0.y > ymax && triangle.vert1.y > ymax && triangle.vert2.y > ymax
 
+let extend(v: Vert, e: float, vNear: Vert, vFar: Vert, s: float) =
+  if  v.h < min 0.0 e && 0.0 < vFar.h then
+    between(e, v.h, s) // extend down
+  else if abs s < 0.65 && e < min3 v.h vNear.h vFar.h then
+    between(e, min3 v.h vNear.h vFar.h, nxt v.s) // extend up
+  else -100.0 // don't extend
 
-// Calculating area of triangle by points only
-// https://www.cuemath.com/geometry/area-of-triangle-in-coordinate-geometry/
-let area (x0:float, y0:float, x1:float, y1:float, x2:float, y2:float) : float =
-  abs((x0*(y1-y2) + x1*(y2-y0) + x2*(y0-y1)) / 2.0)
-
-// Find out if a point is inside a triangle
-// https://www.geeksforgeeks.org/check-whether-a-given-point-lies-inside-a-triangle-or-not/
-let isInside (point : Position) (triangle : Triangle) : bool =
-  // Find total area of triangle.
-  // Then find area of the 3 triangles created from our point to the vertices.
-  let totalArea : float = area(triangle.vert0.x, triangle.vert0.y, triangle.vert1.x, triangle.vert1.y, triangle.vert2.x, triangle.vert2.y)
-  let areaP01 : float = area(point.x, point.y, triangle.vert0.x, triangle.vert0.y, triangle.vert1.x, triangle.vert1.y)
-  let areaP12 : float = area(point.x, point.y, triangle.vert1.x, triangle.vert1.y, triangle.vert2.x, triangle.vert2.y)
-  let areaP02 : float = area(point.x, point.y, triangle.vert0.x, triangle.vert0.y, triangle.vert2.x, triangle.vert2.y)
-  // Using a small epsilon for tolerance since we are dealing with floats
-  let epsilon : float = 0.0000000001
-  abs(totalArea - (areaP01+areaP12+areaP02)) < epsilon
-
-let triaLoop (v0:Vert) (v1:Vert) (v2:Vert) (xmin:float) (xmax:float) (ymin:float) (ymax:float) (epsilon:float) =
-  // Iterating through all pixels in lower left triangle
+let distanceWithoutSqrt (p0: Position) (p1: Position) =
+  let dx: float = p1.x-p0.x
+  let dy: float = p1.y-p0.y
+  dx*dx+dy*dy
+let closestSubTriangle (point : Position) (triangle : Triangle) : bool =
+  let v1pos = {x=triangle.vert1.x; y=triangle.vert1.y}
+  let v2pos = {x=triangle.vert2.x; y=triangle.vert2.y}
+  let dv1 = distanceWithoutSqrt point v1pos
+  let dv2 = distanceWithoutSqrt point v2pos
+  dv1 < dv2
+let triaLoop (v0:Vert) (v1:Vert) (v2:Vert) (e0:float) (e1:float) (e2:float) (xmin:float) (xmax:float) (ymin:float) (ymax:float) (epsilon:float) =
   for i = 0 to width-1 do
     for j = 0 to width-1 do
       let currentPosition: Position = {
           x=xmin + (float i + 0.5) * epsilon;
           y=ymin + (float j + 0.5) * epsilon}
+      let mutable curTri: Triangle = {
+                  vert0=v0; vert1=v1; vert2=v2; 
+                  e0=e0; e1=e1; e2=e2}
+      while distance curTri.vert1 curTri.vert2 >= epsilon do
+        let dist: float = distance curTri.vert1 curTri.vert2
+        let delta: float = k1*dist + k2*abs(curTri.vert1.h - curTri.vert2.h)
+        let s3: float = mix curTri.vert1.s curTri.vert2.s
+        let x3: float = (curTri.vert1.x + curTri.vert2.x) / 2.0
+        let y3: float = (curTri.vert1.y + curTri.vert2.y) / 2.0
+        let (e4:float, e5: float, h3: float) =
+          match curTri.e0 with
+          | (h: float) when h > -100 ->  
+                  if abs(h - curTri.vert1.h) > abs(h - curTri.vert2.h)
+                  then curTri.e0, -100, (curTri.e0+curTri.vert1.h)/2.0+s3*delta
+                  else -100, curTri.e0, (curTri.e0+curTri.vert2.h)/2.0+s3*delta
+          | _ -> 
+                  -100, -100, (curTri.vert1.h + curTri.vert2.h)/2.0 + s3*delta
+        
+        let v3: Vert = {x=x3; y=y3; s=s3; h=h3}
+        let s03 : float = mix curTri.vert0.s s3
+        let e1Active : bool = curTri.e1 > -100.0
+        let e2Active : bool = curTri.e2 > -100.0
+        let e4Active : bool = e4 > -100.0
+        let e5Active : bool = e5 > -100.0
+        
+        let e3 : float =
+          match e1Active, e2Active, e4Active, e5Active with
+          | false, false, false, false
+              ->  
+                  if rivers = 1 && max curTri.vert1.h curTri.vert2.h > 0.1 
+                    && min curTri.vert1.h curTri.vert2.h < min3 curTri.vert0.h v3.h -0.1
+                  then between(min curTri.vert1.h curTri.vert2.h, min curTri.vert0.h v3.h, s03)
+                  else -100.0
+          | true, false, false, false -> extend(curTri.vert1, curTri.e1, curTri.vert0, v3, s03)
+          | false, true, false, false -> extend(curTri.vert2, curTri.e2, curTri.vert0, v3, s03)
+          | false, false, true, false  -> extend(curTri.vert1, e4, v3, curTri.vert0, s03)
+          | false, false, false, true -> extend(curTri.vert2, e5, v3, curTri.vert0, s03)
+          | true, false, false, true -> between(curTri.e1, e5, s03)
+          | false, true, true, false -> between(curTri.e2, e4, s03)
+          | true, true, false, false -> between(curTri.e1, curTri.e2, s03)
+          | true, false, true, false ->
+              if abs s03 < 2.75*dist
+                && min3 curTri.vert1.h curTri.vert0.h v3.h > min e4 curTri.e1
+              then
+                between(min curTri.e1 e4, min3 curTri.vert1.h curTri.vert0.h v3.h, nxt s03)
+              else
+                -100.0
+          | false, true, false, true ->
+              if abs s03 < 2.75*dist
+                && min3 curTri.vert2.h curTri.vert0.h v3.h > min e5 curTri.e2
+              then
+                between(min curTri.e2 e5, min3 curTri.vert2.h curTri.vert0.h v3.h, nxt s03)
+              else
+                -100.0
+          | true, true, true, false -> between(curTri.e2, min curTri.e1 e4, s03)
+          | true, true, false, true -> between(curTri.e1, min curTri.e2 e5, s03)
+          | _,_,_,_ -> printf "Rivers on both e4 and e5 not possible\n"; -100.0
 
-      let mutable currentTriangle: Triangle = {vert0=v0; vert1=v1; vert2=v2}
-      if isInside currentPosition currentTriangle then
+        let subTriangle1: Triangle = {vert0=v3; vert1=curTri.vert0; vert2=curTri.vert1; e0=curTri.e2; e1=e5; e2=e3}
+        let subTriangle2: Triangle = {vert0=v3; vert1=curTri.vert0; vert2=curTri.vert2; e0=curTri.e1; e1=e4; e2=e3}
+        if closestSubTriangle currentPosition curTri then
+          curTri <- subTriangle1
+        else
+          curTri <- subTriangle2
 
-        while distance currentTriangle.vert1 currentTriangle.vert2 >= epsilon do
-          let dist: float = distance currentTriangle.vert1 currentTriangle.vert2
-          let delta: float = k1*dist + k2*abs(currentTriangle.vert1.h - currentTriangle.vert2.h)
-          let s3: float = mix currentTriangle.vert1.s currentTriangle.vert2.s
-          let x3: float = (currentTriangle.vert1.x+currentTriangle.vert2.x)/2.0
-          let y3: float = (currentTriangle.vert1.y+currentTriangle.vert2.y)/2.0
-          let h3: float = (currentTriangle.vert1.h + currentTriangle.vert2.h) / 2.0 + s3 * delta
-
-          let v3: Vert = {x=x3; y=y3; s=s3; h=h3}
-          let subTriangle1: Triangle = {vert0=v3; vert1=currentTriangle.vert0; vert2=currentTriangle.vert1}
-          let subTriangle2: Triangle = {vert0=v3; vert1=currentTriangle.vert0; vert2=currentTriangle.vert2}
-          
-          if isInside currentPosition subTriangle1 then
-            currentTriangle <- subTriangle1
-          else
-            currentTriangle <- subTriangle2
-          
-        heights.[i,j] <- (currentTriangle.vert1.h+currentTriangle.vert2.h)/2.0
-
-  
-let extend(v, e, vNear, vFar, s, delta) =
-  if  v.h < min 0.0 e && 0.0 < vFar.h then
-    Some (between (e, v.h, s)) // extend down
-  else if abs s < 0.65 && e < min3 v.h vNear.h vFar.h then
-    Some (between (e, min3 v.h vNear.h vFar.h, nxt v.s)) // extend up
-  else None // don't extend
+      heights.[i,j] <- (curTri.vert1.h+curTri.vert2.h)/2.0
+      river.[i,j] <- river.[i,j] || curTri.e0 <> -100.0 || curTri.e1 <> -100.0 || curTri.e2 <> -100.0
 
 let mutable ctable = [||]
 
@@ -164,9 +192,9 @@ let array2bmp nn =
   let height = Array2D.length1 heights
   let width = Array2D.length2 heights
   let ncols = Array.length ctable - 6
+
   makeBMP.makeBMP nn width height
     (fun (i,j) ->
-       // if river.[i,j] && heights.[i,j] >= -0.003 then ctable.[5 + ncols/2]
        if river.[i,j] then ctable.[5]
        else
          if curves>0.0 && heights.[i,j] > 0.0 &&
@@ -221,50 +249,30 @@ let main args =
      i <- i+1
      
   if seed = 0.0 then
-    let ss = 32000
-  // let rng = System.Random()
-  // let ss = rng.Next(0,1000000)
+    let rng = System.Random()
+    let ss = rng.Next(0,1000000)
     seed <- float ss / 100000.0
-    //  let rng = System.Random()
-    //  let ss = rng.Next(0,1000000)
-    //  seed <- float ss / 100000.0
     printf "Seed: %A\n" seed
 
   ctable <- Array.ofList (makeColourMap colfile)
 
-  let seed00: float = mix seed 3.141593
-  let seed01: float = mix seed 2.234551
-  let seed10: float = mix seed 5.629339
-  let seed11: float = mix seed 9.075109
-  let seed55: float = mix seed 7.555155
-  let h00: float = between(-0.6,-0.1,seed00)
-  let h01: float = between(-0.6,-0.1,seed01)
-  let h10: float = between(-0.6,-0.1,seed10)
-  let h11: float = between(-0.6,-0.1,seed11)
-  let h55: float = between(0.2,0.7,seed55)
+  let seed0m1 = mix seed 1.323564
+  let seed01 = mix seed 3.234551
+  let seed21 = mix seed 5.86023
+  let h01 = between(-0.2,0.7,seed01)
+  let h0m1 = between(-0.6,-0.1, seed0m1)
+  let h21 = between(-0.6,-0.1,seed21)
   let xmin: float = max 0.0 (xmid - 0.5 / scale)
   let ymin: float = max 0.0 (ymid - 0.5 / scale)
   let xmax: float = min 1.0 (xmid + 0.5 / scale)
   let ymax: float = min 1.0 (ymid + 0.5 / scale)
 
-  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=0.0; y=0.0; s=seed00; h=h00}
-       {x=0.0; y=1.0; s=seed01; h=h01}
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
-  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=0.0; y=0.0; s=seed00; h=h00}
-       {x=1.0; y=0.0; s=seed10; h=h10}
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
-  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=1.0; y=1.0; s=seed11; h=h11}
-       {x=0.0; y=1.0; s=seed01; h=h01}
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
-  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=1.0; y=1.0; s=seed11; h=h11}
-       {x=1.0; y=0.0; s=seed10; h=h10}
+  triaLoop {x=0.0; y=1.0; s=seed01; h=h01}
+       {x=2.0; y=1.0; s=seed21; h=h21}
+       {x=0.0; y= -1.0; s=seed0m1; h=h0m1}
+       -100
+       -100
+       -100
        xmin xmax ymin ymax
        (1.0 / float width / scale);
   

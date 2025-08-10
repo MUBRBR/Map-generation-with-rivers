@@ -2,34 +2,34 @@
 
 let mutable rivers = 1 // indicates that rivers are made
 
-let width = 2048 // size of bitmap array
+let mutable width = 2048 // size of bitmap array
 
-let heights = Array2D.create width width -2.0
+let heights = Array2D.create width width ((float32) -2.0)
 let river = Array2D.create width width false
 
 let min3 x y z = min x (min y z)
 let max3 x y z = max x (max y z)
 
 // magic constant for PRNG
-let magic = 100.0 * System.Math.PI
+let magic : float32 = (float32) 100.0 * (float32) System.Math.PI
 
 // make new seed from two seeds
-let mix seed1 seed2 =
+let mix (seed1 : float32) (seed2 : float32) =
   let a = (seed1 + magic)
   let b = (seed2 + magic)
-  (a*b) % 2.0 - 1.0
+  (float32) (a*b) % (float32) 2.0 - (float32) 1.0
 
 // make new seed from one seed
 let nxt seed =
   let a = (seed + magic)
-  (a*a) % 2.0 - 1.0
+  (a*a) % (float32)2.0 - (float32) 1.0
   
 // random value between a and b, tend towards middle
 let between(a,b,seed) =
-  (a + b + seed*seed*seed*(a-b))/2.0
+  (float32)(a + b + seed*seed*seed*(a-b))/(float32)2.0
 
-type Vert = { x: float; y: float; s: float; h: float }
-type Edge = float option
+type Vert = { x: float32; y: float32; s: float32; h: float32 }
+type Edge = float32 option
 
 // distance between points
 let distance (p0:Vert) (p1:Vert) =
@@ -70,30 +70,30 @@ let rec tria (v0:Vert) (v1:Vert) (v2:Vert)
     let dist = distance v1 v2 // distance
 
     // altitude variation depends on both horisontal and vertical distance
-    let delta = 0.32*dist + 0.55*abs(v1.h-v2.h)
+    let delta = (float32) 0.32*dist + (float32)0.55*abs(v1.h-v2.h)
 
     // attributes for v3
-    let s3 = mix v1.s v2.s
-    let x3 = (v1.x+v2.x)/2.0
-    let y3 = (v1.y+v2.y)/2.0
+    let s3 =  mix ((float32) v1.s) ((float32) v2.s)
+    let x3 = (v1.x+v2.x)/ (float32) 2.0
+    let y3 = (v1.y+v2.y)/(float32)2.0
     let (e4, e5, h3) // cut long edge, placing river (if any)
        = match e0 with
          | None // no river on e0, v3 height by simple midpoint displacement
-             -> (None, None, (v1.h+v2.h)/2.0 + s3*delta)
+             -> (None, None, (v1.h+v2.h)/(float32)2.0 + s3*delta)
          | Some h // copy river towards closest-height vertex
-              // and v3 height from river height and opposite vertex height
              -> if abs(h-v1.h) > abs(h-v2.h)
-                then (e0, None, (h+v1.h)/2.0 + s3*delta)
-                else (None, e0, (h+v2.h)/2.0 + s3*delta)
+                then (e0, None, (h+v1.h)/(float32)2.0 + s3*delta)
+                else (None, e0, (h+v2.h)/(float32)2.0 + s3*delta)
     let v3 = {x=x3; y=y3; s=s3; h=h3}
-    if dist < epsilon
+    if dist < (epsilon)
+    // if dist < (float32 1.4*epsilon)
     then // plot point
       let i = int (round ((x3-xmin) / epsilon))
       let j = int (round ((y3-ymin) / epsilon))
       if i < 0 || i >= width || j < 0 || j >= width
       then ()
       else (heights.[i,j] <-
-              if heights.[i,j] = -2.0 then h3 else (heights.[i,j] + h3)/2.0;
+              if heights.[i,j] = (float32) -2.0 then h3 else (heights.[i,j] + h3)/(float32)2.0;
             river.[i,j] <-
               river.[i,j] || e0 <> None || e1 <> None || e2 <> None)
     else // subdivide
@@ -103,31 +103,34 @@ let rec tria (v0:Vert) (v1:Vert) (v2:Vert)
          match (e1, e2, e4, e5) with
          // 1 2 a b
          | (None,None,None,None)
-              -> if rivers = 1 && max v1.h v2.h > 0.1
-                    && min v1.h v2.h < min3 v0.h v3.h (-0.1)
+              -> if rivers = 1 && max v1.h v2.h > (float32) 0.1
+                    && min v1.h v2.h < min3 v0.h v3.h ((float32) -0.1)
                  then // make new river
                    Some (between (min v1.h v2.h, min v0.h v3.h, s03))
                  else None
-
+         // One edge with a river
          | (Some e1,None,None,None) -> extend (v1, e1, v0, v3, s03, delta)
          | (None,Some e2,None,None) -> extend (v2, e2, v0, v3, s03, delta)
          | (None,None,Some e4,None) -> extend (v1, e4, v3, v0, s03, delta)
          | (None,None,None,Some e5) -> extend (v2, e5, v3, v0, s03, delta)
+         // two edges with a river
+         // Burde e1, e5 og e2, e4 ikke byttes med hhv. e1, e4 og e2,e5
          | (Some e1,None,None,Some e5) -> Some (between (e1, e5, s03))
          | (None,Some e2,Some e4,None) -> Some (between (e2, e4, s03))
          | (Some e1,Some e2,None,None) -> Some (between (e1, e2, s03))
          | (Some e1,None,Some e4,None)
-              -> if abs s03 < 2.75*dist
+              -> if abs s03 < (float32)2.75*dist
                     && min3 v1.h v0.h v3.h > min e4 e1
                  then // make branch
                    Some (between (min e1 e4, min3 v1.h v0.h v3.h, nxt s03))
                  else None
          | (None,Some e2,None,Some e5)
-              -> if abs s03 < 2.75*dist
+              -> if abs s03 < (float32) 2.75*dist
                     && min3 v2.h v0.h v3.h > min e5 e2
                  then // make branch
                    Some (between (min e2 e5, min3 v2.h v0.h v3.h, nxt s03))
                  else None
+         // three edges with a river
          | (Some e1,Some e2,Some e4,None)
               -> Some (between (e2, min e1 e4, s03))
          | (Some e1,Some e2,None,Some e5)
@@ -139,10 +142,11 @@ let rec tria (v0:Vert) (v1:Vert) (v2:Vert)
        tria v3 v0 v2 e1 e4 e3 xmin xmax ymin ymax epsilon)
 
 // possibly extend river
+// Extend bruger slet ikke delta?
 and extend(v, e, vNear, vFar, s, delta) =
-  if  v.h < min 0.0 e && 0.0 < vFar.h then
+  if  v.h < min ((float32) 0.0) e && (float32) 0.0 < vFar.h then
     Some (between (e, v.h, s)) // extend down
-  else if abs s < 0.65 && e < min3 v.h vNear.h vFar.h then
+  else if abs s < (float32) 0.65 && e < min3 v.h vNear.h vFar.h then
     Some (between (e, min3 v.h vNear.h vFar.h, nxt v.s)) // extend up
   else None // don't extend
 
@@ -179,7 +183,7 @@ let makeColourMap colfile =
   let lines3 = Array.filter (fun l -> l <> []) lines2
   lines2cols (Array.toList lines3) (-1,0,0,0)
 
-let mutable curves = 0.0
+let mutable curves = (float32) 0.0
 
 // output map as BMP file
 let array2bmp nn =
@@ -188,120 +192,94 @@ let array2bmp nn =
   let ncols = Array.length ctable - 6
   makeBMP.makeBMP nn width height
     (fun (i,j) ->
-       if river.[i,j] then ctable.[5]
+       if river.[i,j] then ctable.[306]
        else
-         if curves>0.0 && heights.[i,j] > 0.0 &&
+         if curves> (float32) 0.0 && heights.[i,j] > (float32) 0.0 &&
             i>0 && i<width-1 && j>0 && j<height-1 &&
             (int (heights.[i,j]*curves) > int (heights.[i-1,j]*curves) ||
              int (heights.[i,j]*curves) > int (heights.[i+1,j]*curves) ||
              int (heights.[i,j]*curves) > int (heights.[i,j-1]*curves) ||
              int (heights.[i,j]*curves) > int (heights.[i,j+1]*curves))
-         then  ctable.[4 + int (heights.[i,j]*curves) % 2]
+         then ctable.[4 + int (heights.[i,j]*curves) % 2]
          else
-           let c = 6 + int (heights.[i,j]*(float ncols)/2.0) + ncols/2
+           let c = 6 + int (heights.[i,j]*(float32 ncols)/((float32)2.0)) + ncols/2
            if c < 6 then ctable.[0]
            else if c >= ncols then ctable.[1]
            else ctable.[c])
 
 // [<EntryPoint>]
 let main args =
-  let mutable seed = 0.0
-  let mutable xmid = 0.5
-  let mutable ymid = 0.5
-  let mutable scale = 0.5
+  let mutable seed = (float32) 0.0
+  let mutable xmid = (float32) 0.5
+  let mutable ymid = (float32) 0.5
+  let mutable scale = (float32) 0.5
   let mutable i = 0
-  let mutable outfile = "landRec"
+  let mutable outfile = "testingLargeTriangle"
   let mutable colfile = "Olsson2"
+  let mutable bmp = false
 
   // read command line parameters:
-  // -s <float> : set seed
-  // -x <float> : set x of centre (between 0.0 and 1.0)
-  // -y <float> : set y of centre (between 0.0 and 1.0)
-  // -m <float> : set magnification
+  // -s <float32> : set seed
+  // -x <float32> : set x of centre (between 0.0 and 1.0)
+  // -y <float32> : set y of centre (between 0.0 and 1.0)
+  // -m <float32> : set magnification
   // -o <file name> : set output file name (without .bmp extension)
   // -c <file name> : set colour file name (without .col extension)
   // -r : flip river generation (default on)
 
   while i < Array.length args do
      if args.[i] = "-s" && i+1 < Array.length args
-     then seed <- float args.[i+1]
+     then seed <- ((float32) args.[i+1])
      else if args.[i] = "-x" && i+1 < Array.length args
-     then xmid <- max 0.0 (float args.[i+1])
+     then xmid <- max ((float32) 0.0) (float32 args.[i+1])
      else if args.[i] = "-y" && i+1 < Array.length args
-     then ymid <- max 0.0 (float args.[i+1])
+     then ymid <- max ((float32) 0.0) (float32 args.[i+1])
      else if args.[i] = "-m" && i+1 < Array.length args
-     then scale <- (float args.[i+1])
+     then scale <- (float32 args.[i+1])
      else if args.[i] = "-o" && i+1 < Array.length args
      then outfile <- args.[i+1]
      else if args.[i] = "-c" && i+1 < Array.length args
      then colfile <- args.[i+1]
      else if args.[i] = "-r" then rivers <- 1 - rivers
      else if args.[i] = "-C" && i+1 < Array.length args
-     then curves <- (float args.[i+1])
+     then curves <- (float32 args.[i+1])
+     else if args[i] = "-bmp" 
+     then bmp <- true
      else ()
      i <- i+1
-     
-  if seed = 0.0 then
+
+
+  if seed = (float32) 0.0 then
     let rng = System.Random()
     let ss = rng.Next(0,1000000)
-    seed <- float ss / 100000.0
-    printf "Seed: %A\n" seed
+    seed <- float32 ss / (float32) 100000.0
 
-  ctable <- Array.ofList (makeColourMap colfile)
+  if bmp then
+    ctable <- Array.ofList (makeColourMap colfile)
 
-  let seed00 = mix seed 3.141593
-  let seed01 = mix seed 2.234551
-  let seed10 = mix seed 5.629339
-  let seed11 = mix seed 9.075109
-  let seed55 = mix seed 7.555155
-  let h00 = between(-0.6,-0.1,seed00)
-  let h01 = between(-0.6,-0.1,seed01)
-  let h10 = between(-0.6,-0.1,seed10)
-  let h11 = between(-0.6,-0.1,seed11)
-  let h55 = between(0.2,0.7,seed55)
-  let xmin = max 0.0 (xmid - 0.5 / scale)
-  let ymin = max 0.0 (ymid - 0.5 / scale)
-  let xmax = min 1.0 (xmid + 0.5 / scale)
-  let ymax = min 1.0 (ymid + 0.5 / scale)
+  let seed0m1 = mix seed ((float32)1.323564)
+  let seed01 = mix seed ((float32)3.234551)
+  let seed21 = mix seed ((float32)5.86023)
+  let h01 = between(((float32) -0.2),((float32)0.7),seed01)
+  let h0m1 = between(((float32) -0.6),((float32) -0.1), seed0m1)
+  let h21 = between(((float32) -0.6),((float32) -0.1),seed21)
+  let xmin = max ((float32)0.0) (xmid - ((float32)0.5) / scale)
+  let ymin = max ((float32)0.0) (ymid - ((float32)0.5) / scale)
+  let xmax = min ((float32)1.0) (xmid + ((float32)0.5) / scale)
+  let ymax = min ((float32)1.0) (ymid + ((float32)0.5) / scale)
 
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=0.0; y=0.0; s=seed00; h=h00}
-       {x=0.0; y=1.0; s=seed01; h=h01}
+  tria {x=((float32) 0.0); y=((float32) 0.0); s=seed01; h=h01}
+       {x=((float32)2.0); y=((float32) 0.0); s=seed21; h=h21}
+       {x=((float32) 0.0); y= ((float32) 2.0); s=seed0m1; h=h0m1}
        None
        None
        None
        xmin xmax ymin ymax
-       (1.0 / float width / scale);
+       (((float32)1.0) / float32 width / scale);
+    
+   if bmp then
+    array2bmp outfile;
 
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=0.0; y=0.0; s=seed00; h=h00}
-       {x=1.0; y=0.0; s=seed10; h=h10}
-       None
-       None
-       None
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
+  0
 
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=1.0; y=1.0; s=seed11; h=h11}
-       {x=0.0; y=1.0; s=seed01; h=h01}
-       None
-       None
-       None
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
-
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=1.0; y=1.0; s=seed11; h=h11}
-       {x=1.0; y=0.0; s=seed10; h=h10}
-       None
-       None
-       None
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
-
-   array2bmp outfile;
-
-   0
-
-main [||]
+main fsi.CommandLineArgs

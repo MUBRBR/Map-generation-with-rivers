@@ -4,7 +4,7 @@ open System.Collections.Generic
 
 let mutable rivers = 1 // indicates that rivers are made
 
-let width = 1023 // size of bitmap array
+let width = 2048 // size of bitmap array
 
 let heights = Array2D.create width width -2.0
 let river = Array2D.create width width false
@@ -75,41 +75,28 @@ let extend(v, e, vNear, vFar, s, delta) =
 let triaLoop (v0:Vert) (v1:Vert) (v2:Vert) 
             (e0:float) (e1:float) (e2:float)
             (xmin:float) (xmax:float) (ymin:float) (ymax:float) (epsilon:float) =
-  // Initialize a stack with just the original triangle in it
   let triangles : Stack<Triangle> = Stack<Triangle>()    
   triangles.Push{vert0=v0; vert1=v1; vert2=v2; edge0=e0; edge1=e1; edge2=e2}
-  
   while triangles.Count > 0 do
-    // popping a triangle from the stack while still having access to it for calculation purposes below.
     let currTriangle : Triangle = triangles.Pop()
     if outsideBounds(currTriangle, xmin, xmax, ymin, ymax) then ()
     else
       let dist : float = distance currTriangle.vert1 currTriangle.vert2 // distance
-
-      // altitude variation depends on both horisontal and vertical distance
       let delta : float = k1*dist + k2*abs(currTriangle.vert1.h - currTriangle.vert2.h)
-
-      // attributes for v3
       let s3 : float = mix currTriangle.vert1.s currTriangle.vert2.s
       let x3 : float = (currTriangle.vert1.x + currTriangle.vert2.x) / 2.0
       let y3 : float = (currTriangle.vert1.y + currTriangle.vert2.y) / 2.0
       let (e4 : float, e5 : float, h3 : float)
         = match currTriangle.edge0 with
-          // | (edgeAltitude : float) when edgeAltitude <= -100.0 -> (-100.0, -100.0, (currTriangle.vert1.h + currTriangle.vert2.h) / 2.0 + s3 * delta)
-
           | (edgeAltitude : float) when  edgeAltitude > -100.0
               -> 
-
                   if abs(edgeAltitude-currTriangle.vert1.h) > abs(edgeAltitude-currTriangle.vert2.h) then 
                     currTriangle.edge0, -100, (edgeAltitude+currTriangle.vert1.h) / 2.0 + s3 * delta
                   else
                     -100, currTriangle.edge0, (edgeAltitude+currTriangle.vert2.h) / 2.0 + s3 * delta
           | _ -> -100.0, -100.0, (currTriangle.vert1.h + currTriangle.vert2.h) / 2.0 + s3 * delta
       let v3 : Vert = {x=x3; y=y3; s=s3; h=h3}   
-
-
-
-      if dist < epsilon then
+      if dist < 2.0*epsilon then
         let i : int = int (round ((x3-xmin) / epsilon))
         let j : int = int (round ((y3-ymin) / epsilon))
         if i < 0 || i >= width || j < 0 || j >= width
@@ -126,36 +113,27 @@ let triaLoop (v0:Vert) (v1:Vert) (v2:Vert)
                       between(min currTriangle.vert1.h currTriangle.vert2.h, min currTriangle.vert0.h v3.h, s03)
                 else
                   -100
-          // For readability there is a comment defining what edge we are trying to extend in each case.
-          // Edge1 extend river
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt > -100.0 && edge2Alt <= -100.0 && edge4Alt <= -100.0 && edge5Alt <= -100.0
             -> 
             extend(currTriangle.vert1, currTriangle.edge1, currTriangle.vert0, v3, s03, delta)
-          // Edge2 extend river
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt <= -100.0 && edge2Alt > -100.0 && edge4Alt <= -100.0 && edge5Alt <= -100.0
             -> 
               extend(currTriangle.vert2, currTriangle.edge2, currTriangle.vert0, v3, s03, delta)
-          // Edge4 extend river
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt <= -100.0 && edge2Alt <= -100.0 && edge4Alt > -100.0 && edge5Alt <= -100.0
             -> 
               extend(currTriangle.vert1, e4, v3, currTriangle.vert0, s03, delta)
-          // Edge5 extend river
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt <= -100.0 && edge2Alt <= -100.0 && edge4Alt <= -100.0 && edge5Alt > -100.0
             -> 
               extend(currTriangle.vert2, e5, v3, currTriangle.vert0, s03, delta)
-          // Between Edge1 && Edge5
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt > -100.0 && edge2Alt <= -100.0 && edge4Alt <= -100.0 && edge5Alt > -100.0
             -> 
               between(currTriangle.edge1, e5, s03)
-          // Between Edge2 && Edge4
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt <= -100.0 && edge2Alt > -100.0 && edge4Alt > -100.0 && edge5Alt <= -100.0
             -> 
               between(currTriangle.edge2, e4, s03)
-          // Between Edge1 && Edge2
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt > -100.0 && edge2Alt > -100.0 && edge4Alt <= -100.0 && edge5Alt <= -100.0
             -> 
               between(currTriangle.edge1, currTriangle.edge2, s03)
-          // Between Edge1 && Edge4
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt > -100.0 && edge2Alt <= -100.0 && edge4Alt > -100.0 && edge5Alt <= -100.0
             ->  
               if abs s03 < 2.75*dist && min3 currTriangle.vert1.h currTriangle.vert0.h v3.h > min e4 currTriangle.edge1 
@@ -163,7 +141,6 @@ let triaLoop (v0:Vert) (v1:Vert) (v2:Vert)
                     between(min currTriangle.edge1 e4, min3 currTriangle.vert1.h currTriangle.vert0.h v3.h, nxt s03)
                   else
                     -100.0
-          // Between Edge2 && Edge5
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt <= -100.0 && edge2Alt > -100.0 && edge4Alt <= -100.0 && edge5Alt > -100.0
             ->  
               if abs s03 < 2.75*dist && min3 currTriangle.vert2.h currTriangle.vert0.h v3.h > min e5 currTriangle.edge2
@@ -171,11 +148,9 @@ let triaLoop (v0:Vert) (v1:Vert) (v2:Vert)
                   between(min currTriangle.edge2 e5, min3 currTriangle.vert2.h currTriangle.vert0.h v3.h, nxt s03)
                 else
                   -100.0
-          // Between Edge1 && Edge2 && Edge4
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt > -100.0 && edge2Alt > -100.0 && edge4Alt > -100.0 && edge5Alt <= -100.0
             -> 
               between(currTriangle.edge2, min currTriangle.edge1 e4, s03)
-          // Between Edge1 && Edge2 && Edge5
           | (edge1Alt: float, edge2Alt: float, edge4Alt: float, edge5Alt: float) when edge1Alt > -100.0 && edge2Alt > -100.0 && edge4Alt <= -100.0 && edge5Alt > -100.0
             -> 
               between(currTriangle.edge1, min currTriangle.edge2 e5, s03)
@@ -183,7 +158,6 @@ let triaLoop (v0:Vert) (v1:Vert) (v2:Vert)
 
         triangles.Push{vert0=v3; vert1=currTriangle.vert0; vert2=currTriangle.vert1; edge0=currTriangle.edge2; edge1=e5; edge2=e3}
         triangles.Push{vert0=v3; vert1=currTriangle.vert0; vert2=currTriangle.vert2; edge0=currTriangle.edge1; edge1=e4; edge2=e3}
-
 
 let mutable ctable = [||]
 
@@ -250,7 +224,7 @@ let main args =
   let mutable ymid = 0.5
   let mutable scale = 1.0
   let mutable i = 0
-  let mutable outfile = "land"
+  let mutable outfile = "landStack2"
   let mutable colfile = "Olsson2"
 
   // read command line parameters:
@@ -282,7 +256,6 @@ let main args =
      i <- i+1
      
   if seed = 0.0 then
-    // let ss = 47000 // For a specific seed to test against recursive version.
     let rng = System.Random()
     let ss = rng.Next(0,1000000)
     seed <- float ss / 100000.0
@@ -304,39 +277,25 @@ let main args =
   let ymin = max 0.0 (ymid - 0.5 / scale)
   let xmax = min 1.0 (xmid + 0.5 / scale)
   let ymax = min 1.0 (ymid + 0.5 / scale)
+  let seed0m1 = mix seed 1.323564
+  let seed01 = mix seed 3.234551
+  let seed21 = mix seed 5.86023
+  let h01 = between(-0.2,0.7,seed01)
+  let h0m1 = between(-0.6,-0.1, seed0m1)
+  let h21 = between(-0.6,-0.1,seed21)
+  let xmin: float = max 0.0 (xmid - 0.5 / scale)
+  let ymin: float = max 0.0 (ymid - 0.5 / scale)
+  let xmax: float = min 1.0 (xmid + 0.5 / scale)
+  let ymax: float = min 1.0 (ymid + 0.5 / scale)
+  triaLoop {x=0.0; y=1.0; s=seed01; h=h01}
+       {x=2.0; y=1.0; s=seed21; h=h21}
+       {x=0.0; y= -1.0; s=seed0m1; h=h0m1}
+       -100.0
+       -100.0
+       -100.0
+       xmin xmax ymin ymax
+       (1.0 / float width / scale);
   
-  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=0.0; y=0.0; s=seed00; h=h00}
-       {x=0.0; y=1.0; s=seed01; h=h01}
-       -100
-       -100
-       -100
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
-  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=0.0; y=0.0; s=seed00; h=h00}
-       {x=1.0; y=0.0; s=seed10; h=h10}
-       -100
-       -100
-       -100
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
-  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=1.0; y=1.0; s=seed11; h=h11}
-       {x=0.0; y=1.0; s=seed01; h=h01}
-       -100
-       -100
-       -100
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
-  triaLoop {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=1.0; y=1.0; s=seed11; h=h11}
-       {x=1.0; y=0.0; s=seed10; h=h10}
-       -100
-       -100
-       -100
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
   
    array2bmp outfile;
 

@@ -1,8 +1,10 @@
 #r "makeBMP.dll"
 
+open System.Diagnostics
+
 let mutable rivers = 1 // indicates that rivers are made
 
-let width = 2048 // size of bitmap array
+let width = 8192 // size of bitmap array
 
 let heights = Array2D.create width width -2.0
 let river = Array2D.create width width false
@@ -86,6 +88,7 @@ let rec tria (v0:Vert) (v1:Vert) (v2:Vert)
                 then (e0, None, (h+v1.h)/2.0 + s3*delta)
                 else (None, e0, (h+v2.h)/2.0 + s3*delta)
     let v3 = {x=x3; y=y3; s=s3; h=h3}
+    // if e4.IsSome || e5.IsSome then
     if dist < epsilon
     then // plot point
       let i = int (round ((x3-xmin) / epsilon))
@@ -208,10 +211,11 @@ let main args =
   let mutable seed = 0.0
   let mutable xmid = 0.5
   let mutable ymid = 0.5
-  let mutable scale = 0.5
+  let mutable scale = 1.0
   let mutable i = 0
-  let mutable outfile = "landRec"
+  let mutable outfile = "RecF64"
   let mutable colfile = "Olsson2"
+  let mutable bmp = false
 
   // read command line parameters:
   // -s <float> : set seed
@@ -238,6 +242,8 @@ let main args =
      else if args.[i] = "-r" then rivers <- 1 - rivers
      else if args.[i] = "-C" && i+1 < Array.length args
      then curves <- (float args.[i+1])
+     else if args[i] = "-bmp" 
+     then bmp <- true
      else ()
      i <- i+1
      
@@ -245,63 +251,60 @@ let main args =
     let rng = System.Random()
     let ss = rng.Next(0,1000000)
     seed <- float ss / 100000.0
-    printf "Seed: %A\n" seed
 
-  ctable <- Array.ofList (makeColourMap colfile)
+  if bmp then
+    ctable <- Array.ofList (makeColourMap colfile)
 
-  let seed00 = mix seed 3.141593
-  let seed01 = mix seed 2.234551
-  let seed10 = mix seed 5.629339
-  let seed11 = mix seed 9.075109
-  let seed55 = mix seed 7.555155
-  let h00 = between(-0.6,-0.1,seed00)
-  let h01 = between(-0.6,-0.1,seed01)
-  let h10 = between(-0.6,-0.1,seed10)
-  let h11 = between(-0.6,-0.1,seed11)
-  let h55 = between(0.2,0.7,seed55)
-  let xmin = max 0.0 (xmid - 0.5 / scale)
-  let ymin = max 0.0 (ymid - 0.5 / scale)
-  let xmax = min 1.0 (xmid + 0.5 / scale)
-  let ymax = min 1.0 (ymid + 0.5 / scale)
 
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=0.0; y=0.0; s=seed00; h=h00}
-       {x=0.0; y=1.0; s=seed01; h=h01}
+  let seed0m1 = mix seed 1.323564
+  let seed01 = mix seed 3.234551
+  let seed21 = mix seed 5.86023
+  let h01 = between(-0.2,0.7,seed01)
+  let h0m1 = between(-0.6,-0.1, seed0m1)
+  let h21 = between(-0.6,-0.1,seed21)
+  let xmin: float = max 0.0 (xmid - 0.5 / scale)
+  let ymin: float = max 0.0 (ymid - 0.5 / scale)
+  let xmax: float = min 1.0 (xmid + 0.5 / scale)
+  let ymax: float = min 1.0 (ymid + 0.5 / scale)
+  tria {x=0.0; y=1.0; s=seed01; h=h01}
+       {x=2.0; y=1.0; s=seed21; h=h21}
+       {x=0.0; y= -1.0; s=seed0m1; h=h0m1}
        None
        None
        None
        xmin xmax ymin ymax
        (1.0 / float width / scale);
+    
+   if bmp then
+    array2bmp outfile;
 
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=0.0; y=0.0; s=seed00; h=h00}
-       {x=1.0; y=0.0; s=seed10; h=h10}
-       None
-       None
-       None
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
+  0
 
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=1.0; y=1.0; s=seed11; h=h11}
-       {x=0.0; y=1.0; s=seed01; h=h01}
-       None
-       None
-       None
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
 
-  tria {x=0.5; y=0.5; s=seed55; h=h55}
-       {x=1.0; y=1.0; s=seed11; h=h11}
-       {x=1.0; y=0.0; s=seed10; h=h10}
-       None
-       None
-       None
-       xmin xmax ymin ymax
-       (1.0 / float width / scale);
 
-   array2bmp outfile;
+let numberOfRuns = 10
 
-   0
+printfn "Starting benchmark..."
+printfn "Running the code %d times."
 
-main [||]
+let timings =
+    [
+        for i in 1..numberOfRuns ->
+            let stopwatch = Stopwatch.StartNew()
+
+            let result = main fsi.CommandLineArgs
+
+
+            stopwatch.Stop()
+
+            printfn "Run %2d: %8.2f ms (Result: %d)" i stopwatch.Elapsed.TotalMilliseconds result
+
+            stopwatch.Elapsed.TotalMilliseconds
+    ]
+
+let averageTime = List.average timings
+
+printfn "\n--- Benchmark Results ---"
+printfn "Individual runs (ms): %A" timings
+printfn "Average time: %.2f ms" averageTime
+printfn "-------------------------"

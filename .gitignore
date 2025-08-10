@@ -9,6 +9,15 @@ __pycache__/
 # .vscode
 .vscode
 
+# Futhark literate files
+*.md
+*.png
+*Futhark/*.c
+*Futhark/*.py
+
+# Original land.fsx file
+land.fsx
+
 # BMP
 *.BMP
 
