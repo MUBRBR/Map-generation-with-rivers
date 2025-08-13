@@ -21,34 +21,18 @@ const int screenWidth = 1024;
 const int screenHeight = screenWidth;
 
 
-void generate_texture_data(struct futhark_context* ctx, uint32_t* pixel_data, float x, float y, float view) {
+void generate_texture_data(struct futhark_context* ctx, uint32_t* pixel_data, float x, float y, float view, float seed) {
     printf("Regenerating data with x=%.2f, y=%.2f, view=%.2f\n", x, y, view);
 
     struct futhark_u32_2d *result;
 
-    int err = futhark_entry_main(ctx, &result, screenWidth, x, y, view);
+    int err = futhark_entry_main(ctx, &result, seed, screenWidth, x, y, view, true);
     if (err) {
         fprintf(stderr, "Futhark call failed: %s\n", futhark_context_get_error(ctx));
         return;
     }
 
     futhark_values_u32_2d(ctx, result, pixel_data);
-
-    int num_pixels = screenWidth * screenHeight;
-    for (int i = 0; i < num_pixels; i++) {
-        uint32_t pixel_argb = pixel_data[i];
-
-        // Futhark literate uses ARGB format so we
-        // switch it around to RGBA format.
-        // This is highly inefficient, but works.
-        // Changes will be made.
-        unsigned char a = (pixel_argb >> 24) & 0xFF;
-        unsigned char r = (pixel_argb >> 16) & 0xFF;
-        unsigned char g = (pixel_argb >> 8)  & 0xFF;
-        unsigned char b = (pixel_argb >> 0)  & 0xFF;
-
-        pixel_data[i] = (0xFFU << 24) | ((uint32_t)b << 16) | ((uint32_t)g << 8) | r;    
-    }
 
     futhark_free_u32_2d(ctx, result);
 }
@@ -90,8 +74,9 @@ int main() {
     float ymin = -5.0;
     float ymax = 5.0;
     float pan = 0.01*view;
+    float seed = 32350.0;
 
-    generate_texture_data(ctx, (uint32_t*)pixels, x, y, view);
+    generate_texture_data(ctx, (uint32_t*)pixels, x, y, view, seed);
 
     // https://github.com/raysan5/raylib/blob/master/examples/textures/textures_image_processing.c
     UpdateTexture(texture, pixels); 
@@ -154,14 +139,32 @@ int main() {
             needs_update = true;
         }
 
+        if ((x+view) > xmax) {
+            x = xmax-view;
+        }
+
+        if ((y+view) > ymax) {
+            y = ymax-view;
+        }
+
+        if (x < xmin) {
+            x = xmin;
+        }
+
+        if (y < ymin) {
+            y = ymin;
+        }
+
         if (needs_update) {
-            generate_texture_data(ctx, (uint32_t*)pixels, x, y, view);
+            generate_texture_data(ctx, (uint32_t*)pixels, x, y, view, seed);
             UpdateTexture(texture, pixels);
         }
         BeginDrawing();
         ClearBackground(BLACK);
         DrawTexture(texture, 0, 0, WHITE);
         DrawFPS(10, 40);
+        
+        DrawCircle(screenWidth/2, screenHeight/2, 5, RED);
 
         EndDrawing();
     }

@@ -49,10 +49,10 @@ def lerp_colour (c1: u32) (c2: u32) (t: f32) : u32 =
   let b = b1+((b2-b1)*t)
   in f32tou32 r g b
 
-def colours (x : f32) : u32 =
+def colours (x : f32) (RGBA : bool) : u32 =
     let c : u32 =
         -- river
-        if x <= -3.0f32 then teal
+        if x == -3.0f32 then teal
         -- water colors
         else if x <= -1.0f32 then black6
         else if x <= -0.5f32 then
@@ -115,9 +115,18 @@ def colours (x : f32) : u32 =
         else if x <= 1.0 then
             let t = (x - 0.8) / (1.0-0.8)
         in lerp_colour snow546 cloudGrey606 (f32.min t 1.0)
-        else cloudGrey606
-            
-    in c
+        else cloudGrey606       
+    
+    -- for use with raylib.
+    in
+    if RGBA then
+        let r : u32 = (c >> 16) & 0xFF
+        let g : u32 = (c >> 8) & 0xFF
+        let b : u32 = c & 0xFF
+        in
+        (0xFF << 24 | b << 16 | g << 8 | r)
+    else
+        c
 
 type Vert = {x: f32, y: f32, s: f32, h: f32}
 
@@ -255,7 +264,7 @@ def chooseMainTriangle(curPos, tri1, tri2) =
     else
         tri2
 
-def triaLoop (originalTriangle1 : Triangle) (originalTriangle2 : Triangle) (epsilon: f32) (resolution : i64) (xStart : f32) (yStart : f32) (viewDist : f32) =
+def triaLoop (originalTriangle1 : Triangle) (originalTriangle2 : Triangle) (epsilon: f32) (resolution : i64) (xStart : f32) (yStart : f32) (viewDist : f32) (RGBA : bool) =
     map (\j -> 
         map (\i -> 
             let norm_x = (f32.i64 i) / (f32.i64 (resolution-1))
@@ -267,14 +276,16 @@ def triaLoop (originalTriangle1 : Triangle) (originalTriangle2 : Triangle) (epsi
             let mainTriangle = chooseMainTriangle(currentPosition, originalTriangle1, originalTriangle2)
             let curTri : Triangle = findSubTriangle(currentPosition, mainTriangle, epsilon)
             let h : f32 = if (curTri.e0 != -100 || curTri.e1 != -100 || curTri.e2 != -100) then -3.0f32 else (curTri.vert1.h + curTri.vert2.h) / 2.0
-            let c = colours h
+            let c = colours h RGBA
             in c
             ) (iota resolution)
         ) (iota resolution)
 
 
-def main (resolution : i64) (zoomXStart : f32) (zoomYStart : f32) (viewDistance : f32) =
-    let seed = 32350/100000
+-- 0 for ARGB for futhark literate use-
+-- 1 for RGBA for use as library with raylib in c.
+def main (seedInput : f32) (resolution : i64) (zoomXStart : f32) (zoomYStart : f32) (viewDistance : f32) (RGBA : bool) =
+    let seed = seedInput/100000
     let seed0m1 = mix (seed, 1.323564)
     let seed01 = mix (seed, 3.234551)
     let seed21 = mix (seed, 5.86023)
@@ -293,8 +304,14 @@ def main (resolution : i64) (zoomXStart : f32) (zoomYStart : f32) (viewDistance 
         vert1={x= 5.0, y= -5.0, s=seed0m1, h=h0m1}, 
         vert2={x= -5.0, y= 5.0, s=seed21, h=h21}, 
         e0=(-100), e1=(-100), e2=(-100)}
+    
+    -- evt. bruge en liste af triangles hvis der skal passes flere med.
+    let triangleList = [lowerRightTriangle, upperLeftTriangle]
+
     let epsilon = (viewDistance/(f32.i64 resolution))
-    let heights = triaLoop upperLeftTriangle lowerRightTriangle epsilon resolution zoomXStart zoomYStart viewDistance
+    let heights = triaLoop upperLeftTriangle lowerRightTriangle epsilon resolution zoomXStart zoomYStart viewDistance RGBA
     in heights
 
--- > :img main 1024i64 -5.0f32 -5.0f32 10.0f32
+-- > :img main 32350f32 1024i64 -5.0f32 -5.0f32 10.0f32 false
+
+-- > :img main 32350f32 1024i64 -5.0f32 -5.0f32 10.0f32 true
